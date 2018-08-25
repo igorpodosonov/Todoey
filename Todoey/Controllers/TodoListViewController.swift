@@ -7,19 +7,22 @@
 //
 
 import UIKit
+import CoreData
 
 class TodoListViewController: UITableViewController {
 
     var itemArray = [Item]()
     
-    let dataFilePath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("Items.plist")
+    var selectedCategory : Category? {
+        didSet{
+            loadItems()
+        }
+    }
     
-    let defaults = UserDefaults.standard
+    let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        
-        loadItems()
     }
     
     //MARK: TableView Datasource methods
@@ -30,9 +33,6 @@ class TodoListViewController: UITableViewController {
         let item = itemArray[indexPath.row]
         
         cell.textLabel?.text = item.title
-        
-        //Ternary operator ==>
-        // value = condition ? valueIfTrue : valueIfFalse
         
         cell.accessoryType = item.done ? .checkmark : .none
         
@@ -63,15 +63,14 @@ class TodoListViewController: UITableViewController {
         
         let alert = UIAlertController(title: "Add new Todoey item", message: "", preferredStyle: .alert)
         
+        //TODO: Prevent empty string input
         let action = UIAlertAction(title: "Add title", style: .default) { (action) in
             
-            //TODO: Prevent empty string input
-            let newItem = Item()
+            let newItem = Item(context: self.context)
             newItem.title = textField.text!
+            newItem.parentCategory = self.selectedCategory
             
             self.itemArray.append(newItem)
-            
-            //self.defaults.set(self.itemArray, forKey: "TodoListArray")
             
             self.saveItems()
             
@@ -87,29 +86,61 @@ class TodoListViewController: UITableViewController {
         present(alert, animated: true, completion: nil)
     }
     
-    //MARK - Model Manipulation Methods
+    //MARK: - Model Manipulation Methods
     
     func saveItems() {
-        let encoder = PropertyListEncoder()
         
         do {
-            let data = try encoder.encode(itemArray)
-            try data.write(to: dataFilePath!)
+            try context.save()
         } catch {
-            print("Error encoding item array, \(error)")
+            print("Error saving context, \(error)")
         }
         
         self.tableView.reloadData()
     }
     
-    func loadItems() {
-        if let data = try? Data(contentsOf: dataFilePath!) {
-            let decoder = PropertyListDecoder()
+    func loadItems(with request : NSFetchRequest<Item> = Item.fetchRequest(), predicate: NSPredicate? = nil) {
+        
+        let categoryPredicate = NSCompoundPredicate(format: "parentCategory.name MATCHES %@", selectedCategory!.name!)
+        
+        if let additionalPredicate = predicate {
+            request.predicate = NSCompoundPredicate(type: .and, subpredicates: [categoryPredicate, additionalPredicate])
+        } else {
+            request.predicate = categoryPredicate
+        }
+        
+        do{
+            itemArray = try context.fetch(request)
+        } catch {
+            print("Error fetching retrieve all data request, \(error)")
+        }
+        
+        tableView.reloadData()
+        
+    }
+    
+}
+
+//MARK: - Search bar methods
+
+extension TodoListViewController : UISearchBarDelegate {
+    
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        let request : NSFetchRequest<Item> = Item.fetchRequest()
+        
+        let containsPredicate = NSPredicate(format: "title CONTAINS[cd] %@", searchBar.text!)
+        
+        request.sortDescriptors = [NSSortDescriptor(key: "title", ascending: true)]
+        
+        loadItems(with: request, predicate: containsPredicate)
+    }
+    
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        if searchBar.text?.count == 0 {
+            loadItems()
             
-            do {
-                itemArray = try decoder.decode([Item].self, from: data)
-            } catch {
-                print("Error decoding plist file, \(error)")
+            DispatchQueue.main.async {
+               searchBar.resignFirstResponder()
             }
         }
     }
