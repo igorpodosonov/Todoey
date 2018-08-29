@@ -8,8 +8,9 @@
 
 import UIKit
 import RealmSwift
+import ChameleonFramework
 
-class CategoryViewController: UITableViewController {
+class CategoryViewController: SwipeTableViewController {
     
     let realm = try! Realm()
 
@@ -24,9 +25,22 @@ class CategoryViewController: UITableViewController {
     //MARK: - TableView Datasource Methods
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "CategoryCell", for: indexPath)
         
-        cell.textLabel!.text = categoryArray?[indexPath.row].name ?? "No categories added yet"
+        let cell = super.tableView(tableView, cellForRowAt: indexPath)
+        
+        if let category = categoryArray?[indexPath.row] {
+            
+            cell.textLabel!.text = category.name
+            
+            guard let categoryColor = UIColor(hexString: category.color) else { fatalError() }
+            
+            cell.backgroundColor = categoryColor
+            cell.textLabel?.textColor = ContrastColorOf(categoryColor, returnFlat: true)
+            cell.tintColor = UIColor.red
+            
+        } else {
+            cell.textLabel?.text = "No items added"
+        }
         
         return cell
         
@@ -65,6 +79,7 @@ class CategoryViewController: UITableViewController {
             
             let newCategory = Category()
             newCategory.name = textField.text!
+            newCategory.color = UIColor.randomFlat.hexValue()
             
             self.save(category: newCategory)
         }
@@ -80,6 +95,25 @@ class CategoryViewController: UITableViewController {
         alert.addAction(cancel)
         
         present(alert, animated: true, completion: nil)
+    }
+    
+    //MARK: - Delete Category
+    
+    override func updateModel(at indexPath: IndexPath) {
+        do{
+            try realm.write {
+                
+                if let categoryForDeletion = categoryArray?[indexPath.row] {
+                    for item in categoryForDeletion.items {
+                        realm.delete(item)
+                    }
+                    
+                    realm.delete(categoryForDeletion)
+                }
+            }
+        } catch {
+            print("Error deleting category \(error)")
+        }
     }
     
     //MARK: - Data Manipulation Methods
